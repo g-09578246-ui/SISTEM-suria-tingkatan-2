@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Suria Interaktif MediaPipe</title>
+    <!-- Tailwind CSS for modern responsive layout -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- MediaPipe Hands and Camera Utils -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #050515; color: #f3f4f6; overflow-x: hidden; }
+        /* Custom scrollbar for info panel */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+        ::-webkit-scrollbar-thumb { background: rgba(59, 130, 246, 0.5); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(59, 130, 246, 0.8); }
+        
+        /* Glassmorphism utility */
+        .glass {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-between">
+
+    <header class="w-full glass py-3 px-6 flex flex-wrap items-center justify-between z-30 shadow-lg">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/30">
+                <i class="fa-solid fa-globe text-white text-lg"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold tracking-wider text-white">SISTEM SURIA INTERAKTIF</h1>
+                <p class="text-xs text-blue-300">Bab 12 KSSM Sains Tingkatan 2 | Kawalan Gerak Isyarat Tangan (MediaPipe)</p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-2 mt-2 sm:mt-0">
+            <span id="gesture-indicator" class="px-3 py-1 rounded-full text-xs font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-all duration-300">
+                <i class="fa-solid fa-hand mr-1"></i> Menunggu Tangan...
+            </span>
+            <button id="toggle-camera-btn" onclick="toggleCamera()" class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-xs font-semibold text-white transition shadow">
+                <i class="fa-solid fa-video mr-1"></i> Tutup Kamera
+            </button>
+            <button onclick="openHelpModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition">
+                <i class="fa-solid fa-circle-question mr-1"></i> Panduan Isyarat
+            </button>
+        </div>
+    </header>
+
+    <main class="relative w-full flex-grow flex flex-col lg:flex-row items-center justify-center p-4 gap-4 max-w-[1600px]">
+        
+        <!-- Left Column: Canvas and Interactive Controls -->
+        <div class="relative w-full lg:w-8/12 h-[600px] sm:h-[650px] rounded-2xl overflow-hidden shadow-2xl glass flex flex-col items-center justify-center">
+            
+            <!-- Interactive Solar System Canvas -->
+            <canvas id="solarsystem-canvas" class="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"></canvas>
+            
+            <!-- Floating Overlay HUD on Canvas -->
+            <div class="absolute top-4 left-4 z-10 flex flex-col space-y-2 pointer-events-none">
+                <div class="glass px-4 py-2 rounded-xl border border-white/10 text-xs shadow-md pointer-events-auto">
+                    <span class="text-slate-400">Mod Paparan:</span> <strong id="hud-mode" class="text-blue-400">Orbit Penuh (Sistem Suria)</strong>
+                </div>
+                <div class="glass px-4 py-2 rounded-xl border border-white/10 text-xs shadow-md pointer-events-auto flex items-center space-x-2">
+                    <span class="text-slate-400">Kelajuan Masa:</span>
+                    <button onclick="changeSpeed(-1)" class="w-6 h-6 rounded bg-slate-700 hover:bg-slate-600 text-white font-bold">-</button>
+                    <span id="hud-speed" class="font-semibold text-amber-300 w-8 text-center">1x</span>
+                    <button onclick="changeSpeed(1)" class="w-6 h-6 rounded bg-slate-700 hover:bg-slate-600 text-white font-bold">+</button>
+                </div>
+            </div>
+
+            <!-- Hand Tracking Video Preview Floating Picture-in-Picture -->
+            <div id="webcam-container" class="absolute bottom-4 right-4 z-20 w-36 h-28 sm:w-48 sm:h-36 rounded-xl overflow-hidden border-2 border-blue-500/50 shadow-xl bg-slate-900 flex items-center justify-center">
+                <video id="webcam" class="w-full h-full object-cover transform -scale-x-100" autoplay playsinline muted></video>
+                <div class="absolute bottom-1 left-1 bg-black/60 px-2 py-0.5 rounded text-[10px] text-blue-300 font-mono">
+                    <i class="fa-solid fa-video text-emerald-400 mr-1 animate-pulse"></i>MediaPipe AI
+                </div>
+            </div>
+
+            <!-- Quick Bottom Selection Toolbar -->
+            <div class="absolute bottom-4 left-4 right-52 sm:right-56 z-10 flex items-center justify-center gap-1.5 overflow-x-auto py-1 px-2 glass rounded-xl pointer-events-auto">
+                <button onclick="selectPlanet('Matahari')" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-500/20 text-amber-300 hover:bg-amber-500/40 border border-amber-500/30 transition">Matahari</button>
+                <button onclick="selectPlanet('Utarid')" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800 text-slate-200 hover:bg-slate-700 transition">Utarid</button>
+                <button onclick="selectPlanet('Zuhrah')" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800 text-slate-200 hover:bg-slate-700 transition">Zuhrah</button>
+                <button onclick="selectPlanet('Bumi')" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-500/20 text-blue-300 hover:bg-blue-500/40 border border-blue-500/30 transition">Bumi</button>
+                <button onclick="selectPlanet('Marikh')" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800 text-slate-200 hover:bg-slate-700 transition">Marikh</button>
+                <button onclick="selectPlanet('Musytari')" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800 text-slate-200 hover:bg-slate-700 transition">Musytari</button>
+                <button onclick="selectPlanet('Zuhal')" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800 text-slate-200 hover:bg-slate-700 transition">Zuhal</button>
+                <button onclick="selectPlanet('Uranus')" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800 text-slate-200 hover:bg-slate-700 transition">Uranus</button>
+                <button onclick="selectPlanet('Neptun')" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800 text-slate-200 hover:bg-slate-700 transition">Neptun</button>
+            </div>
+        </div>
+
+        <!-- Right Column: Planet Details & Textbook Info Panel -->
+        <div class="w-full lg:w-4/12 h-[600px] sm:h-[650px] glass rounded-2xl p-5 flex flex-col shadow-2xl overflow-y-auto">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-700/60">
+                <div class="flex items-center space-x-2">
+                    <span id="info-planet-icon" class="text-2xl">🌍</span>
+                    <h2 id="info-planet-name" class="text-xl font-bold text-white tracking-wide">BUMI</h2>
+                </div>
+                <span id="info-planet-type" class="px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30">Planet Terestrial</span>
+            </div>
+
+            <!-- Tab Navigation for Info -->
+            <div class="flex space-x-1 my-3 bg-slate-900/60 p-1 rounded-xl">
+                <button onclick="switchTab('ciri')" id="tab-ciri" class="flex-1 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white transition">Ciri Utama</button>
+                <button onclick="switchTab('data')" id="tab-data" class="flex-1 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition">Data Fizikal</button>
+                <button onclick="switchTab('fakta')" id="tab-fakta" class="flex-1 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition">Nota KSSM</button>
+            </div>
+
+            <!-- Tab Content Container -->
+            <div id="tab-content" class="flex-grow space-y-4 text-sm text-slate-300 pr-1">
+                <!-- Dynamically populated via JS -->
+            </div>
+
+            <!-- Interactive Gesture Feedback Panel -->
+            <div class="mt-4 pt-3 border-t border-slate-700/60 bg-slate-900/40 p-3 rounded-xl">
+                <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+                    <span>Isyarat Tangan Aktif:</span>
+                    <span id="active-gesture-name" class="text-emerald-400 font-semibold">Tiada Isyarat</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                    <div id="gesture-confidence-bar" class="bg-gradient-to-r from-blue-500 to-emerald-400 h-full w-0 transition-all duration-200"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Help Modal -->
+    <div id="help-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm hidden">
+        <div class="glass max-w-lg w-full mx-4 p-6 rounded-2xl border border-slate-700 shadow-2xl relative">
+            <button onclick="closeHelpModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white text-lg">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <div class="flex items-center space-x-3 mb-4">
+                <div class="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                    <i class="fa-solid fa-hand-sparkles text-lg"></i>
+                </div>
+                <div>
+                    <h3 class="text-lg font-bold text-white">Panduan Kawalan Isyarat Tangan</h3>
+                    <p class="text-xs text-slate-400">Gunakan tangan anda di hadapan kamera web untuk berinteraksi</p>
+                </div>
+            </div>
+            
+            <div class="space-y-3 text-sm text-slate-300 max-h-[60vh] overflow-y-auto pr-2">
+                <div class="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-start space-x-3">
+                    <span class="text-xl">✊</span>
+                    <div>
+                        <strong class="text-white block">Kepal Tangan (Closed Fist)</strong>
+                        <span class="text-xs text-slate-400">Kembali ke Paparan Sistem Suria Penuh / Reset Pandangan</span>
+                    </div>
+                </div>
+                <div class="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-start space-x-3">
+                    <span class="text-xl">✌️</span>
+                    <div>
+                        <strong class="text-white block">Tanda Keamanan / 2 Jari (Peace Sign)</strong>
+                        <span class="text-xs text-slate-400">Pilih / Tukar ke Planet Seterusnya dalam urutan</span>
+                    </div>
+                </div>
+                <div class="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-start space-x-3">
+                    <span class="text-xl">🖐️</span>
+                    <div>
+                        <strong class="text-white block">Tapak Tangan Terbuka (Open Palm)</strong>
+                        <span class="text-xs text-slate-400">Hentikan / Perlahankan Putaran Planet (Pauze Animasi)</span>
+                    </div>
+                </div>
+                <div class="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-start space-x-3">
+                    <span class="text-xl">👍</span>
+                    <div>
+                        <strong class="text-white block">Ibu Jari Ke Atas (Thumbs Up)</strong>
+                        <span class="text-xs text-slate-400">Tambah kelajuan putaran sistem suria (+ Semula jadi)</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-end">
+                <button onclick="closeHelpModal()" class="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-sm font-semibold text-white shadow transition">
+                    Faham, Mula Meneroka!
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- PLANET DATABASE (Based on KSSM Sains Tingkatan 2 Chapter 12) ---
+        const planetsData = {
+            'Matahari': {
+                name: 'Matahari',
+                type: 'Pusat Sistem Suria',
+                icon: '☀️',
+                color: '#fbbf24',
+                radius: 40,
+                distance: 0,
+                orbitSpeed: 0,
+                ciri: 'Pusat sistem suria yang membekalkan cahaya dan haba. Menjana tenaga melalui tindak balas nuklear. Suhu permukaan mencapai kira-kira 5,500°C manakala terasnya mencapai 15 juta°C.',
+                data: {
+                    jarak: '0 juta km (Pusat)',
+                    jisim: '333,000 x Bumi',
+                    diameter: '1,392,700 km',
+                    ketumpatan: '1.41 g/cm³',
+                    graviti: '274 m/s²',
+                    suhu: '5,500 °C (Permukaan)',
+                    masaOrbit: 'N/A',
+                    masaPutaran: '27 hari (di khatulistiwa)'
+                },
+                fakta: 'Matahari mengandungi 99.8% daripada jumlah jisim keseluruhan Sistem Suria. Gravitinya memegang semua planet, asteriod, dan komet pada orbit masing-masing.'
+            },
+            'Utarid': {
+                name: 'UTARID (Mercury)',
+                type: 'Planet Terestrial (Gergasi Berbatuan)',
+                icon: '🌕',
+                color: '#cbd5e1',
+                radius: 8,
+                distance: 70,
+                orbitSpeed: 0.04,
+                ciri: 'Planet paling dekat dengan Matahari dan planet terkecil dalam sistem suria. Permukaannya penuh dengan kawah asteroid dan tebing tinggi kerana ketiadaan atmosfera yang menapis hentaman.',
+                data: {
+                    jarak: '57.9 juta km (0.39 A.U.)',
+                    jisim: '0.055 x Bumi',
+                    diameter: '4,879 km',
+                    ketumpatan: '5.4 g/cm³',
+                    graviti: '3.7 m/s²',
+                    suhu: '-173°C hingga 427°C',
+                    masaOrbit: '88 hari (di Bumi)',
+                    masaPutaran: '59 hari (di Bumi)'
+                },
+                fakta: 'Disebabkan ketiadaan atmosfera, langit Utarid sentiasa kelihatan gelap seperti di angkasa lepas walaupun pada waktu siang.'
+            },
+            'Zuhrah': {
+                name: 'ZUHRAH (Venus)',
+                type: 'Planet Terestrial (Rumah Hijau)',
+                icon: '🟠',
+                color: '#f97316',
+                radius: 12,
+                distance: 110,
+                orbitSpeed: 0.03,
+                ciri: 'Dikenali sebagai planet "rumah hijau" kerana kandungan karbon dioksida yang sangat tinggi di atmosferanya. Berputar dari timur ke barat (songsang), menyebabkan Matahari terbit dari barat.',
+                data: {
+                    jarak: '108.2 juta km (0.72 A.U.)',
+                    jisim: '0.815 x Bumi',
+                    diameter: '12,104 km',
+                    ketumpatan: '5.2 g/cm³',
+                    graviti: '8.87 m/s²',
+                    suhu: '460°C hingga 462°C',
+                    masaOrbit: '224.7 hari',
+                    masaPutaran: '243 hari'
+                },
+                fakta: 'Zuhrah adalah planet paling panas dalam sistem suria walaupun berada di kedudukan kedua dari Matahari, akibat kesan rumah hijau melampau.'
+            },
+            'Bumi': {
+                name: 'BUMI (Earth)',
+                type: 'Planet Terestrial (Planet Hidupan)',
+                icon: '🌍',
+                color: '#3b82f6',
+                radius: 13,
+                distance: 160,
+                orbitSpeed: 0.025,
+                ciri: 'Satu-satunya planet di alam semesta yang diketahui dihuni oleh makhluk hidup. Lebih 71% permukaan dilitupi air, dan 29% daratan. Mempunyai atmosfera kaya dengan oksigen.',
+                data: {
+                    jarak: '149.6 juta km (1.0 A.U.)',
+                    jisim: '1.0 x Bumi (5.97 x 10²⁴ kg)',
+                    diameter: '12,756 km',
+                    ketumpatan: '5.5 g/cm³',
+                    graviti: '9.8 m/s²',
+                    suhu: 'Purata 14°C',
+                    masaOrbit: '365 hari (1 Tahun)',
+                    masaPutaran: '24 jam (1 Hari)'
+                },
+                fakta: 'Bumi mempunyai medan magnet dan lapisan atmosfera yang melindungi hidupan daripada angin suria serta sinaran ultraungu yang berbahaya.'
+            },
+            'Marikh': {
+                name: 'MARIKH (Mars)',
+                type: 'Planet Terestrial (Planet Merah)',
+                icon: '🔴',
+                color: '#ef4444',
+                radius: 10,
+                distance: 220,
+                orbitSpeed: 0.02,
+                ciri: 'Dikenali sebagai Planet Merah kerana debu kaya besi oksida di permukaannya. Mempunyai dua bulan iaitu Phobos dan Deimos. Kutubnya mengandungi air beku dan karbon dioksida.',
+                data: {
+                    jarak: '227.9 juta km (1.52 A.U.)',
+                    jisim: '0.107 x Bumi',
+                    diameter: '6,794 km',
+                    ketumpatan: '3.9 g/cm³',
+                    graviti: '3.71 m/s²',
+                    suhu: '-143°C hingga 35°C',
+                    masaOrbit: '687 hari',
+                    masaPutaran: '25 jam'
+                },
+                fakta: 'Gunung berapi terbesar dalam sistem suria, Olympus Mons, terletak di Marikh dengan ketinggian hampir 3 kali ganda Gunung Everest.'
+            },
+            'Musytari': {
+                name: 'MUSYTARI (Jupiter)',
+                type: 'Planet Gergasi Bergas',
+                icon: '🪐',
+                color: '#d97706',
+                radius: 26,
+                distance: 300,
+                orbitSpeed: 0.015,
+                ciri: 'Planet terbesar dalam sistem suria. Jisimnya hampir 320 kali ganda Bumi. Berfungsi sebagai "pelindung Bumi" kerana graviti kuatnya memesongkan asteroid besar.',
+                data: {
+                    jarak: '778.3 juta km (5.2 A.U.)',
+                    jisim: '317.8 x Bumi',
+                    diameter: '142,984 km',
+                    ketumpatan: '1.3 g/cm³',
+                    graviti: '24.79 m/s²',
+                    suhu: '-153°C',
+                    masaOrbit: '11.9 tahun',
+                    masaPutaran: '10 jam'
+                },
+                fakta: 'Musytari tidak mempunyai permukaan yang keras kerana ia terdiri sepenuhnya daripada gas hidrogen dan helium yang tebal.'
+            },
+            'Zuhal': {
+                name: 'ZUHAL (Saturn)',
+                type: 'Planet Gergasi Bergas (Planet Bergelang)',
+                icon: '🪐',
+                color: '#fde047',
+                radius: 22,
+                distance: 380,
+                orbitSpeed: 0.012,
+                ciri: 'Terkenal dengan sistem gelang (cecincin) spektakuler yang diperbuat daripada ketulan ais dan serpihan batuan. Mempunyai sekurang-kurangnya 62 bulan.',
+                data: {
+                    jarak: '1,429 juta km (9.5 A.U.)',
+                    jisim: '95.2 x Bumi',
+                    diameter: '120,536 km',
+                    ketumpatan: '0.7 g/cm³ (Lebih ringan daripada air)',
+                    graviti: '10.44 m/s²',
+                    suhu: '-185°C',
+                    masaOrbit: '29.5 tahun',
+                    masaPutaran: '11 jam'
+                },
+                fakta: 'Zuhal mempunyai ketumpatan yang sangat rendah (0.7 g/cm³); jika anda mempunyai besen air yang cukup besar, planet Zuhal akan terapung di atas air!'
+            },
+            'Uranus': {
+                name: 'URANUS',
+                type: 'Planet Gergasi Bergas (Paksi Condong)',
+                icon: '🔵',
+                color: '#38bdf8',
+                radius: 17,
+                distance: 460,
+                orbitSpeed: 0.009,
+                ciri: 'Planet unik yang paksi putarannya condong ke sisi (hampir selari dengan orbitnya, sudut 98°). Mempunyai sistem cecincin nipis dan gelap serta 27 bulan.',
+                data: {
+                    jarak: '2,871 juta km (19.2 A.U.)',
+                    jisim: '14.5 x Bumi',
+                    diameter: '51,118 km',
+                    ketumpatan: '1.27 g/cm³',
+                    graviti: '8.69 m/s²',
+                    suhu: '-214°C',
+                    masaOrbit: '84 tahun',
+                    masaPutaran: '17 jam'
+                },
+                fakta: 'Uranus adalah planet paling sejuk dalam sistem suria dengan suhu atmosfera mencecah -224°C walaupun Neptun berada lebih jauh.'
+            },
+            'Neptun': {
+                name: 'NEPTUN',
+                type: 'Planet Gergasi Bergas (Planet Biru Gelap)',
+                icon: '🌀',
+                color: '#6366f1',
+                radius: 16,
+                distance: 540,
+                orbitSpeed: 0.007,
+                ciri: 'Planet paling jauh daripada Matahari dalam senarai 8 planet utama. Atmosferanya kaya dengan gas metana yang memberikan warna biru terang.',
+                data: {
+                    jarak: '4,504 juta km (30.1 A.U.)',
+                    jisim: '17.1 x Bumi',
+                    diameter: '49,528 km',
+                    ketumpatan: '1.6 g/cm³',
+                    graviti: '11.15 m/s²',
+                    suhu: '-225°C',
+                    masaOrbit: '164.8 tahun',
+                    masaPutaran: '16 jam'
+                },
+                fakta: 'Neptun mempunyai angin paling kencang dalam sistem suria, mencapai kelajuan sehingga 2,100 km/j.'
+            }
+        };
+
+        let currentSelectedPlanet = 'Bumi';
+        let currentTab = 'ciri';
+        let timeSpeed = 1;
+        let isPaused = false;
+        let activeView = 'system'; // 'system' or 'planet'
+
+        // Canvas & Animation Setup
+        const canvas = document.getElementById('solarsystem-canvas');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+        let angles = {};
+
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            width = container.clientWidth;
+            height = container.clientHeight;
+            canvas.width = width;
+            canvas.height = height;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Initialize angles for each planet
+        Object.keys(planetsData).forEach(key => {
+            if (key !== 'Matahari') {
+                angles[key] = Math.random() * Math.PI * 2;
+            }
+        });
+
+        function animateSolarSystem() {
+            ctx.clearRect(0, 0, width, height);
+
+            // Draw starry background
+            ctx.fillStyle = '#050515';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw subtle star field
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+            for (let i = 0; i < 80; i++) {
+                let x = (Math.sin(i * 99) * 10000) % width;
+                let y = (Math.cos(i * 33) * 10000) % height;
+                if (x < 0) x += width;
+                if (y < 0) y += height;
+                ctx.fillRect(x, y, 1.5, 1.5);
+            }
+
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const scaleFactor = Math.min(width, height) / 1100;
+
+            if (activeView === 'system') {
+                // Draw Sun
+                const sun = planetsData['Matahari'];
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, sun.radius * scaleFactor, 0, Math.PI * 2);
+                ctx.fillStyle = sun.color;
+                ctx.shadowColor = '#fbbf24';
+                ctx.shadowBlur = 30;
+                ctx.fill();
+                ctx.shadowBlur = 0; // reset shadow
+
+                // Sun label
+                ctx.fillStyle = '#fef3c7';
+                ctx.font = 'bold 12px Inter';
+                ctx.textAlign = 'center';
+                ctx.fillText('Matahari', centerX, centerY + sun.radius * scaleFactor + 18);
+
+                // Draw Orbits and Planets
+                Object.keys(planetsData).forEach(key => {
+                    if (key === 'Matahari') return;
+                    const p = planetsData[key];
+                    const orbitR = p.distance * scaleFactor;
+
+                    // Orbit circle
+                    ctx.beginPath();
+                    ctx.arc(centerX, centerY, orbitR, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+
+                    // Update angle
+                    if (!isPaused) {
+                        angles[key] += p.orbitSpeed * 0.02 * timeSpeed;
+                    }
+
+                    const x = centerX + Math.cos(angles[key]) * orbitR;
+                    const y = centerY + Math.sin(angles[key]) * orbitR;
+
+                    // Planet body
+                    ctx.beginPath();
+                    ctx.arc(x, y, Math.max(4, p.radius * scaleFactor * 0.6), 0, Math.PI * 2);
+                    ctx.fillStyle = p.color;
+                    if (currentSelectedPlanet === key) {
+                        ctx.shadowColor = p.color;
+                        ctx.shadowBlur = 15;
+                    }
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+
+                    // Saturn ring simulation
+                    if (key === 'Zuhal') {
+                        ctx.beginPath();
+                        ctx.ellipse(x, y, 14 * scaleFactor, 6 * scaleFactor, Math.PI / 4, 0, Math.PI * 2);
+                        ctx.strokeStyle = 'rgba(253, 224, 71, 0.6)';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    }
+
+                    // Planet label
+                    ctx.fillStyle = currentSelectedPlanet === key ? '#60a5fa' : '#94a3b8';
+                    ctx.font = currentSelectedPlanet === key ? 'bold 12px Inter' : '10px Inter';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(key, x, y + (p.radius * scaleFactor * 0.6) + 14);
+                });
+            } else {
+                // Single Planet Detailed View
+                const p = planetsData[currentSelectedPlanet];
+                
+                // Draw glowing planet in center
+                ctx.beginPath();
+                ctx.arc(centerX, centerY - 20, 70 * scaleFactor, 0, Math.PI * 2);
+                ctx.fillStyle = p.color;
+                ctx.shadowColor = p.color;
+                ctx.shadowBlur = 40;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Title overlay
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 20px Inter';
+                ctx.textAlign = 'center';
+                ctx.fillText(p.name, centerX, centerY + 80 * scaleFactor);
+
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '12px Inter';
+                ctx.fillText(`Tekan isyarat ✊ (Kepal Tangan) untuk kembali ke Sistem Suria`, centerX, centerY + 105 * scaleFactor);
+            }
+
+            requestAnimationFrame(animateSolarSystem);
+        }
+        requestAnimationFrame(animateSolarSystem);
+
+        function selectPlanet(planetName) {
+            currentSelectedPlanet = planetName;
+            activeView = 'planet';
+            updateInfoPanel();
+            
+            // Update active state in quick toolbar buttons if any
+            const buttons = document.querySelectorAll('button[onclick^="selectPlanet"]');
+            buttons.forEach(btn => {
+                if (btn.textContent.includes(planetName)) {
+                    btn.className = 'px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30 transition';
+                } else {
+                    btn.className = 'px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800 text-slate-200 hover:bg-slate-700 transition';
+                }
+            });
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            ['ciri', 'data', 'fakta'].forEach(t => {
+                const btn = document.getElementById(`tab-${t}`);
+                if (t === tab) {
+                    btn.className = 'flex-1 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white transition';
+                } else {
+                    btn.className = 'flex-1 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition';
+                }
+            });
+            updateInfoPanel();
+        }
+
+        function updateInfoPanel() {
+            const p = planetsData[currentSelectedPlanet];
+            document.getElementById('info-planet-icon').textContent = p.icon;
+            document.getElementById('info-planet-name').textContent = p.name;
+            document.getElementById('info-planet-type').textContent = p.type;
+
+            const container = document.getElementById('tab-content');
+            if (currentTab === 'ciri') {
+                container.innerHTML = `
+                    <div class="space-y-3">
+                        <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                            <h4 class="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-1">Ciri Utama Permukaan & Atmosfera</h4>
+                            <p class="text-xs leading-relaxed text-slate-200">${p.ciri}</p>
+                        </div>
+                        <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                            <h4 class="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-1">Nota KSSM Bab 12</h4>
+                            <p class="text-xs leading-relaxed text-slate-300">Semakin jauh sebuah planet dari Matahari, semakin banyak masa yang diperlukan untuk mengelilingi Matahari dalam satu orbit lengkap.</p>
+                        </div>
+                    </div>
+                `;
+            } else if (currentTab === 'data') {
+                container.innerHTML = `
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <div class="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                            <span class="text-slate-400 block">Jarak dari Matahari</span>
+                            <strong class="text-white">${p.data.jarak}</strong>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                            <span class="text-slate-400 block">Jisim Relatif</span>
+                            <strong class="text-white">${p.data.jisim}</strong>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                            <span class="text-slate-400 block">Diameter</span>
+                            <strong class="text-white">${p.data.diameter}</strong>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                            <span class="text-slate-400 block">Ketumpatan</span>
+                            <strong class="text-white">${p.data.ketumpatan}</strong>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                            <span class="text-slate-400 block">Tarikan Graviti</span>
+                            <strong class="text-white">${p.data.graviti}</strong>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                            <span class="text-slate-400 block">Purata Suhu</span>
+                            <strong class="text-white">${p.data.suhu}</strong>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 col-span-2">
+                            <span class="text-slate-400 block">Tempoh Mengelilingi Matahari (Orbit)</span>
+                            <strong class="text-white">${p.data.masaOrbit}</strong>
+                        </div>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = `
+                    <div class="space-y-3">
+                        <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                            <h4 class="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-1">Fakta Menarik & Saintifik</h4>
+                            <p class="text-xs leading-relaxed text-slate-200">${p.fakta}</p>
+                        </div>
+                        <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                            <h4 class="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-1">Hubungan Suhu & Atmosfera</h4>
+                            <p class="text-xs leading-relaxed text-slate-300">Kehadiran atmosfera dan kesan rumah hijau memainkan peranan utama menentukan sama ada suhu permukaan ekstrem atau sederhana.</p>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+        updateInfoPanel();
+
+        function changeSpeed(delta) {
+            timeSpeed = Math.max(0.2, Math.min(5, timeSpeed + delta * 0.5));
+            document.getElementById('hud-speed').textContent = timeSpeed.toFixed(1) + 'x';
+        }
+
+        const videoElement = document.getElementById('webcam');
+        let cameraActive = true;
+        let lastGestureTime = 0;
+
+        function toggleCamera() {
+            cameraActive = !cameraActive;
+            const btn = document.getElementById('toggle-camera-btn');
+            const container = document.getElementById('webcam-container');
+            if (cameraActive) {
+                container.style.display = 'block';
+                btn.innerHTML = '<i class="fa-solid fa-video mr-1"></i> Tutup Kamera';
+                btn.className = 'px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-xs font-semibold text-white transition shadow';
+            } else {
+                container.style.display = 'none';
+                btn.innerHTML = '<i class="fa-solid fa-video-slash mr-1"></i> Buka Kamera';
+                btn.className = 'px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-semibold text-white transition shadow';
+            }
+        }
+
+        function openHelpModal() {
+            document.getElementById('help-modal').classList.remove('hidden');
+        }
+
+        function closeHelpModal() {
+            document.getElementById('help-modal').classList.add('hidden');
+        }
+
+        // Simple heuristic gesture classifier based on MediaPipe landmarks
+        function classifyGesture(landmarks) {
+            // Landmark indices:
+            // Thumb: 4, Index: 8, Middle: 12, Ring: 16, Pinky: 20
+            // Wrist: 0
+            
+            const wrist = landmarks[0];
+            
+            // Check if fingers are extended by comparing distance from wrist to tip vs wrist to knuckle
+            const isExtended = (tipIdx, mcpIdx) => {
+                const tip = landmarks[tipIdx];
+                const mcp = landmarks[mcpIdx];
+                const dTip = Math.hypot(tip.x - wrist.x, tip.y - wrist.y);
+                const dMcp = Math.hypot(mcp.x - wrist.x, mcp.y - wrist.y);
+                return dTip > dMcp * 1.25;
+            };
+
+            const indexExtended = isExtended(8, 5);
+            const middleExtended = isExtended(12, 9);
+            const ringExtended = isExtended(16, 13);
+            const pinkyExtended = isExtended(20, 17);
+            const thumbUp = landmarks[4].y < landmarks[3].y && landmarks[4].y < landmarks[2].y;
+
+            // Closed Fist: All fingers folded
+            if (!indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+                return 'FIST';
+            }
+
+            // Peace Sign: Index and Middle extended, Ring and Pinky folded
+            if (indexExtended && middleExtended && !ringExtended && !pinkyExtended) {
+                return 'PEACE';
+            }
+
+            // Open Palm: All fingers extended
+            if (indexExtended && middleExtended && ringExtended && pinkyExtended) {
+                return 'OPEN_PALM';
+            }
+
+            // Thumbs Up
+            if (thumbUp && !indexExtended && !middleExtended) {
+                return 'THUMBS_UP';
+            }
+
+            return 'UNKNOWN';
+        }
+
+        const planetKeysList = Object.keys(planetsData).filter(k => k !== 'Matahari');
+        let planetIndexCounter = 0;
+
+        function onResults(results) {
+            const gestureIndicator = document.getElementById('gesture-indicator');
+            const activeGestureName = document.getElementById('active-gesture-name');
+            const confidenceBar = document.getElementById('gesture-confidence-bar');
+
+            if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+                gestureIndicator.innerHTML = '<i class="fa-solid fa-hand mr-1"></i> Mencari Tangan...';
+                gestureIndicator.className = 'px-3 py-1 rounded-full text-xs font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-all duration-300';
+                activeGestureName.textContent = 'Tiada Tangan Kesan';
+                confidenceBar.style.width = '0%';
+                return;
+            }
+
+            const landmarks = results.multiHandLandmarks[0];
+            const gesture = classifyGesture(landmarks);
+            const now = Date.now();
+
+            gestureIndicator.innerHTML = '<i class="fa-solid fa-hand text-emerald-400 mr-1"></i> Tangan Dikesan';
+            gestureIndicator.className = 'px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition-all duration-300';
+            confidenceBar.style.width = '100%';
+
+            if (now - lastGestureTime > 1200) { // Throttle gesture triggers
+                if (gesture === 'FIST') {
+                    activeGestureName.textContent = '✊ Kepal Tangan (Reset Sistem)';
+                    activeView = 'system';
+                    document.getElementById('hud-mode').textContent = 'Orbit Penuh (Sistem Suria)';
+                    lastGestureTime = now;
+                } else if (gesture === 'PEACE') {
+                    activeGestureName.textContent = '✌️ Tanda Keamanan (Tukar Planet)';
+                    planetIndexCounter = (planetIndexCounter + 1) % planetKeysList.length;
+                    selectPlanet(planetKeysList[planetIndexCounter]);
+                    lastGestureTime = now;
+                } else if (gesture === 'OPEN_PALM') {
+                    activeGestureName.textContent = '🖐️ Tapak Tangan (Jeda Animasi)';
+                    isPaused = !isPaused;
+                    lastGestureTime = now;
+                } else if (gesture === 'THUMBS_UP') {
+                    activeGestureName.textContent = '👍 Ibu Jari Ke Atas (Tambah Kelajuan)';
+                    changeSpeed(1);
+                    lastGestureTime = now;
+                } else {
+                    activeGestureName.textContent = 'Mengesan Isyarat...';
+                }
+            }
+        }
+
+        // Initialize MediaPipe Hands
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.65,
+            minTrackingConfidence: 0.65
+        });
+
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                if (cameraActive) {
+                    await hands.send({ image: videoElement });
+                }
+            },
+            width: 320,
+            height: 240
+        });
+
+        camera.start().catch(err => {
+            console.warn("Kamera tidak dapat diakses:", err);
+            document.getElementById('webcam-container').innerHTML = `
+                <div class="text-[10px] text-center text-red-400 p-2">Kamera tidak aktif / Ditolak</div>
+            `;
+        });
+    </script>
+</body>
+</html>
